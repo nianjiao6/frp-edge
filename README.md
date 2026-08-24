@@ -1,3 +1,132 @@
+# frp-edge
+
+> **frp-edge** 是 [fatedier/frp](https://github.com/fatedier/frp) 的 fork,基线锁定 **v0.71.0**,为 mtunnel 内网穿透服务维护。
+> 变更集小而收敛(P1/P2 追加式,P5 仅改 frpc 侧默认值):不配置 `[tokenGate]` 段时,frps 行为与上游完全一致(上游测试套件全绿)。
+> 上游 README 原文见下方分隔线之后。许可证延续 Apache-2.0,保留上游版权声明。
+
+## 对外接口规范
+
+第三方接入(认证系统集成、管理面板、计量采集)的完整契约见 **[docs/INTERFACE.md](docs/INTERFACE.md)**:三种认证形态(tokensFile / controlPlane 快照拉取 / verify 在线验证)、派生键算法、reason 码表、Kick API、v2 API 消费规范与部署安全要求。
+
+## 变更点(mcp patch set v1)
+
+| # | 补丁 | 内容 | 规模 | 激活条件 |
+|---|------|------|------|----------|
+| P1 | Kick API | 管理端强制客户端下线 | ~60 行 | 路由常驻(受 webServer Basic Auth 保护,只应绑内网) |
+| P2 | TokenGate | per-user token 认证,取代全局共享 token | ~300 行 | frps 配置 `[tokenGate]` 段 |
+| P5 | 心跳默认值 | tcpmux 下 frpc 应用层心跳默认恢复 30s/90s(上游默认禁用) | ~10 行 | 默认生效(仅 client 侧;显式配置仍优先) |
+
+### P1:强制下线 API
+
+挂在 frps webServer(dashboard)下,与既有 v2 API 同一套 Basic Auth:
+
+```
+POST /api/v2/users/{user}/kick     # 踢掉该 user 名下全部在线实例(封禁主路径)
+POST /api/v2/clients/{key}/kick    # 踢单个实例,key 来自 GET /api/v2/clients
+```
+
+- 响应:`{"kicked": ["<runID>", ...]}`;**空数组也返回 200**(幂等,封禁轮询可放心重复调用);单点踢不存在的 key 返回 404
+- 效果:控制连接断开、代理监听器关闭(**新**访客连接立即失败)、registry 标记 offline
+- 边界(源码+实测):已建立的在途访客连接不被主动切断,自然结束;踢后 frpc 会自动重连,**「不许回来」由删 token(P2)承担**,两者配合才构成封禁
+
+```bash
+curl -u admin:*** -X POST http://127.0.0.1:7500/api/v2/users/alice/kick
+```
+
+### P2:per-user token 认证(TokenGate)
+
+上游 token 模式是全服务单一共享密钥,`user` 字段可任意填——计量串账、封禁无的放矢。TokenGate 是它的 per-user 泛化:协议不变(线上仍只传派生键 `md5(token‖时间戳)`,原始 token 从不上网络),校验改为「按 login user 查表取 token 重算比对」,**登录即绑定身份**,此后每次心跳、每条新工作连接都复检该用户的 token。
+
+**frps 配置:**
+
+```toml
+bindPort = 7000
+
+auth.token = "占位即可"                                    # 挂 TokenGate 后不再用于登录校验
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]    # 必须,见下方命门①
+transport.heartbeatTimeout = 90                           # 建议显式(server 默认 -1)
+
+webServer.addr = "127.0.0.1"                              # Kick API 只听内网
+webServer.user = "admin"
+webServer.password = "强密码"
+
+[tokenGate]
+tokensFile = "/etc/frps/users.json"
+```
+
+**tokens.json**(存**原始 token**,5 秒周期热加载;文件 0600,权限过松启动时会有警告):
+
+```json
+{ "alice": "vJ8xQ...base64...", "bob": "k3F9d...base64..." }
+```
+
+```bash
+TOKEN=$(openssl rand -base64 32)                          # 高熵 token 生成
+echo "{\"alice\": \"$TOKEN\"}" > /etc/frps/users.json && chmod 600 /etc/frps/users.json
+```
+
+> 为什么存原文不存哈希:线上跑的只有派生键 md5(token‖ts),无法从哈希反推;服务端必须持有原文才能重算比对。防线 = 0600 + 内网位置。
+
+**frpc 配置(上游原版二进制,零改动;2026-08-19 起为单一授权码模型):**
+
+```toml
+serverAddr = "edge.example.com"
+serverPort = 7000
+user = "xun-<授权码>"        # 码即身份:Login.user 原文携带(真透传)
+auth.token = "xun-<授权码>"  # 与 user 同值:frpc 用它派生心跳键,frps 侧复检自洽
+auth.additionalScopes = ["HeartBeats", "NewWorkConns"]    # 命门①,双侧必须
+transport.heartbeatInterval = 30                          # P5 后默认即 30,显式双保险
+```
+
+凭证书写请看 [docs/INTERFACE.md](docs/INTERFACE.md) §2.2:验证方按 `user` 字段(即码)查表判决,`allow` 时回显码。真透传的安全边界(建议生产 `tls.force` + `trustedCaFile` pinning)同文档。
+
+**判决语义:**
+
+| 客户端状态 | 新登录 | 已在线会话 |
+|-----------|--------|-----------|
+| 在表 + token 匹配 | ✅ | ✅(每 30s 心跳复检) |
+| 不在表 / 已删 / 已封禁 | ❌ | ❌ 下一次心跳被拒 → ≤30s 断线 |
+| 拿他人 token 冒用 user | ❌ | — |
+| 重放旧 (PrivilegeKey, 时间戳) | ❌(±15min 时效) | ❌ |
+| tokensFile 写坏 | — | 照常运行(保留最后快照 + 警告日志) |
+
+所有拒绝统一返回 `authentication failed`,不泄露用户枚举信息。
+
+### 封禁完整序列(实测时序契约)
+
+```bash
+# 1. 删 token(等快照刷新,≤5s)
+echo '{"bob": "..."}' > /etc/frps/users.json        # 从表中移除 alice
+sleep 6
+# 2. 踢存量(秒级断开)
+curl -u admin:*** -X POST http://127.0.0.1:7500/api/v2/users/alice/kick
+# 效果:存量断 + 心跳失败 + 重连全拒,无"踢了又回来"
+```
+
+**删 token 与 Kick 不可同时发起(快照/文件形态)**:快照刷新前(≤5s)旧表仍认该用户,frpc 被踢后约 2ms 即凭旧快照重连成功;正确序列如上(删 → 等 5s → 踢)。若两步并发,兜底语义为重连会话在下一次心跳(≤30s)被拒出局。**verify 形态无此等待**:判决每次登录实时回调,拒绝即刻生效——验证方改状态后直接 Kick,两步可紧邻执行。
+
+**token 轮换**:换表值 → 旧 token 下一次心跳/重连失败 → 下发新值。附注:frp 控制通道与 work conn 加密密钥同样派生自 token,轮换 token 即同时轮换信道密钥。控制信道的加密层在登录验证通过后才建立(verify 形态下 per-user token 正是那时 learn 的);Login/LoginResp 本就明文传输、之后两端才升级加密,协议顺序不变,frpc 首个登录即成功。
+
+### P5:心跳默认值
+
+上游在 tcpmux(默认开启)下将 frpc 应用层心跳默认置 -1(禁用),仅依赖 tcpmux keepalive。本 fork 将 client 侧默认恢复 30/90——TokenGate 的周期复检依赖心跳。server 侧默认保持 -1(否则会误杀不发心跳的原版 frpc),部署时显式配 `transport.heartbeatTimeout = 90`。
+
+## 部署注意事项
+
+1. **`auth.additionalScopes` 必须双侧配置**(最常见的坑):frpc 侧不配则 Ping/NewWorkConn 根本不带签名(空 key + 零时间戳),frps 必拒 → frpc 无限重连死循环;frps 侧不配则收到签名也不验
+2. tokensFile 权限 0600,放置于内网位置;文件内容为原始 token
+3. Kick 是破坏性端点:webServer 只绑内网 + 强 Basic Auth
+4. `[tokenGate]` 三选一:`tokensFile` / `controlPlane`(快照拉取)/ `verify`(在线验证);同配多形态启动报错
+5. 不配置 `[tokenGate]` = 上游原生行为,可跑上游测试套件验证
+
+## 与上游的关系
+
+- 补丁永远从上游 release tag 拉分支,不追 master/dev;rebase 冲突热点为 `server/service.go`、`server/http/controller_v2.go`
+- Kick API 不计划提上游(fatedier/frp#3277 明确 v1 不做);TokenGate 为业务私有
+- 上游若提供原生等价能力,对应补丁删除回归,调用侧封装隔离
+
+---
+
 # frp
 
 [![Build Status](https://circleci.com/gh/fatedier/frp.svg?style=shield)](https://circleci.com/gh/fatedier/frp)

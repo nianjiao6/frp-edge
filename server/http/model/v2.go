@@ -62,6 +62,12 @@ type V2UserResp struct {
 	ProxyCount  int    `json:"proxyCount"`
 }
 
+// KickResp is returned by the kick endpoints. An empty Kicked list is a
+// valid success (idempotent): no online client matched.
+type KickResp struct {
+	Kicked []string `json:"kicked"`
+}
+
 type V2ClientDetailResp struct {
 	ClientInfoResp
 	Status V2ClientStatusResp `json:"status"`

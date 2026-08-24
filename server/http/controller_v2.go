@@ -217,6 +217,50 @@ func (c *Controller) APIV2ClientDetail(ctx *httppkg.Context) (any, error) {
 	}, nil
 }
 
+// POST /api/v2/users/{user}/kick
+// Kick every online client instance of the user. Idempotent: an empty
+// Kicked list is still a 200 so ban loops may call it repeatedly.
+func (c *Controller) APIV2UserKick(ctx *httppkg.Context) (any, error) {
+	user, err := decodeV2PathParam(ctx, "user", "user")
+	if err != nil {
+		return nil, err
+	}
+
+	if c.clientRegistry == nil || c.kicker == nil {
+		return nil, fmt.Errorf("client registry or kicker unavailable")
+	}
+
+	resp := model.KickResp{Kicked: []string{}}
+	for _, info := range c.clientRegistry.List() {
+		if info.User != user || !info.Online {
+			continue
+		}
+		if c.kicker.KickClientByRunID(info.RunID) {
+			resp.Kicked = append(resp.Kicked, info.RunID)
+		}
+	}
+	return resp, nil
+}
+
+// POST /api/v2/clients/{key}/kick
+func (c *Controller) APIV2ClientKick(ctx *httppkg.Context) (any, error) {
+	key, err := decodeV2PathParam(ctx, "key", "client key")
+	if err != nil {
+		return nil, err
+	}
+
+	if c.clientRegistry == nil || c.kicker == nil {
+		return nil, fmt.Errorf("client registry or kicker unavailable")
+	}
+
+	info, ok := c.clientRegistry.GetByKey(key)
+	if !ok || !info.Online || !c.kicker.KickClientByRunID(info.RunID) {
+		return nil, httppkg.NewError(http.StatusNotFound,
+			fmt.Sprintf("client %s not found or offline", key))
+	}
+	return model.KickResp{Kicked: []string{info.RunID}}, nil
+}
+
 // /api/v2/proxies
 func (c *Controller) APIV2ProxyList(ctx *httppkg.Context) (any, error) {
 	page, pageSize, err := parseV2PageParams(ctx)

@@ -126,6 +126,12 @@ type Service struct {
 	// Auth runtime and encryption materials
 	auth *auth.ServerAuth
 
+	// Optional per-user token gate ([tokenGate] config); nil means upstream
+	// auth. Gate is the union of the snapshot and online-verify forms.
+	gate       gate
+	tokenGate  *auth.TokenGate
+	tokenCache *auth.TokenCache
+
 	tlsConfig *tls.Config
 
 	cfg *v1.ServerConfig
@@ -134,6 +140,13 @@ type Service struct {
 	ctx context.Context
 	// call cancel to stop service
 	cancel context.CancelFunc
+}
+
+// gate is what both token-gate forms provide to the service: session
+// binding for auth and raw-token lookup for the channel crypto.
+type gate interface {
+	NewSessionVerifier(user string) auth.Verifier
+	TokenFor(user string) (string, bool)
 }
 
 func NewService(cfg *v1.ServerConfig) (*Service, error) {
@@ -164,6 +177,47 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 		return nil, err
 	}
 
+	// Per-user token gate: replaces the auth verifier when [tokenGate] is configured.
+	var tokenGate *auth.TokenGate
+	var tokenCache *auth.TokenCache
+	var g gate
+	if cfg.TokenGate.Verify != "" {
+		g = auth.NewVerifyGate(
+			cfg.TokenGate.Verify, cfg.TokenGate.VerifyUser, cfg.TokenGate.VerifyPassword,
+			cfg.Auth.AdditionalScopes)
+		log.Infof("token gate enabled with online verification %s", cfg.TokenGate.Verify)
+	}
+	if cfg.TokenGate.TokensFile != "" || cfg.TokenGate.ControlPlane != "" {
+		var source auth.TokenSource
+		var maxAge time.Duration
+		switch {
+		case cfg.TokenGate.TokensFile != "":
+			// maxAge 0: the file is always local, no unreachable-source staleness.
+			source = auth.NewFileTokenSource(cfg.TokenGate.TokensFile)
+		default:
+			if cfg.TokenGate.SnapshotMaxAge != "" {
+				var err error
+				maxAge, err = time.ParseDuration(cfg.TokenGate.SnapshotMaxAge)
+				if err != nil || maxAge < 0 {
+					return nil, fmt.Errorf("[tokenGate] invalid snapshotMaxAge %q", cfg.TokenGate.SnapshotMaxAge)
+				}
+			} else {
+				maxAge = 5 * time.Minute
+			}
+			source = auth.NewControlPlaneTokenSource(
+				cfg.TokenGate.ControlPlane, cfg.TokenGate.ControlPlaneUser, cfg.TokenGate.ControlPlanePassword,
+				cfg.TokenGate.SnapshotMaxBytes)
+		}
+		cache, err := auth.NewTokenCache(source, maxAge)
+		if err != nil {
+			return nil, err
+		}
+		tokenCache = cache
+		tokenGate = auth.NewTokenGate(tokenCache, cfg.Auth.AdditionalScopes)
+		g = tokenGate
+		log.Infof("token gate enabled with %s", source.Describe())
+	}
+
 	clientRegistry := registry.NewClientRegistry()
 	svr := &Service{
 		ctlManager:     NewControlManager(clientRegistry),
@@ -178,6 +232,9 @@ func NewService(cfg *v1.ServerConfig) (*Service, error) {
 		sshTunnelListener: netpkg.NewInternalListener(),
 		httpVhostRouter:   vhost.NewRouters(),
 		auth:              authRuntime,
+		gate:              g,
+		tokenGate:         tokenGate,
+		tokenCache:        tokenCache,
 		webServer:         webServer,
 		tlsConfig:         tlsConfig,
 		cfg:               cfg,
@@ -431,6 +488,9 @@ func (svr *Service) Close() error {
 	if svr.sshTunnelGateway != nil {
 		svr.sshTunnelGateway.Close()
 	}
+	if svr.tokenCache != nil {
+		svr.tokenCache.Close()
+	}
 	svr.rc.Close()
 	svr.muxer.Close()
 	svr.ctlManager.Close()
@@ -462,17 +522,23 @@ func (svr *Service) handleConnection(ctx context.Context, conn net.Conn, interna
 		var ctl *Control
 		if err == nil {
 			m = &retContent.Login
-			controlConn := acceptedConn.conn
-			if !internal {
-				var controlRW io.ReadWriter
-				controlRW, err = acceptedConn.newControlReadWriter(conn, svr.auth.EncryptionKey())
-				if err == nil {
-					controlConn = acceptedConn.messageConnFor(controlRW)
+			// The control-channel crypto layer must be wrapped only after
+			// RegisterControl verifies the login: with the online-verify gate
+			// the user's token is learned by that very verification, so
+			// wrapping earlier would key the channel off the global fallback
+			// token and desync from the client (whose first encrypted message
+			// would then arrive undecryptable - one failed login per user
+			// after every frps restart). Login/LoginResp travel in the clear
+			// either way, so deferring the wrap changes nothing on the wire.
+			wrapControl := func(key []byte) (*msg.Conn, error) {
+				controlRW, err := acceptedConn.newControlReadWriter(conn, key)
+				if err != nil {
+					return nil, err
 				}
+				return acceptedConn.messageConnFor(controlRW), nil
 			}
-			if err == nil {
-				ctl, err = svr.RegisterControl(controlConn, m, internal, acceptedConn.wireProtocol, acceptedConn.udpPacketCodec)
-			}
+			ctl, err = svr.RegisterControl(acceptedConn.conn, m, internal,
+				acceptedConn.wireProtocol, acceptedConn.udpPacketCodec, wrapControl)
 		}
 
 		if err != nil {
@@ -770,6 +836,7 @@ func (svr *Service) RegisterControl(
 	internal bool,
 	wireProtocol string,
 	udpPacketCodec string,
+	wrapControl func(key []byte) (*msg.Conn, error),
 ) (*Control, error) {
 	switch wireProtocol {
 	case wire.ProtocolV1:
@@ -807,9 +874,25 @@ func (svr *Service) RegisterControl(
 	authVerifier := svr.auth.Verifier
 	if internal && loginMsg.ClientSpec.AlwaysAuthPass {
 		authVerifier = auth.AlwaysPassVerifier
+	} else if svr.gate != nil {
+		// Bind the session to the login user; every later Ping/NewWorkConn
+		// check on this session re-verifies that user's token.
+		authVerifier = svr.gate.NewSessionVerifier(loginMsg.User)
 	}
 	if err := authVerifier.VerifyLogin(loginMsg); err != nil {
 		return nil, err
+	}
+	cryptoKey := svr.controlCryptoKey(loginMsg.User)
+	// Wrap the control channel now, with the key settled by the verified
+	// login (see handleConnection for why this must come after VerifyLogin).
+	// Non-internal callers pass a wrapper; nil keeps ctlConn as-is (internal
+	// connections and tests).
+	if !internal && wrapControl != nil {
+		wrapped, err := wrapControl(cryptoKey)
+		if err != nil {
+			return nil, err
+		}
+		ctlConn = wrapped
 	}
 
 	ctl, err := NewControl(ctx, &SessionContext{
@@ -817,7 +900,7 @@ func (svr *Service) RegisterControl(
 		PxyManager:     svr.pxyManager,
 		PluginManager:  svr.pluginManager,
 		AuthVerifier:   authVerifier,
-		EncryptionKey:  svr.auth.EncryptionKey(),
+		EncryptionKey:  cryptoKey,
 		Conn:           ctlConn,
 		LoginMsg:       loginMsg,
 		ServerCfg:      svr.cfg,
@@ -886,6 +969,26 @@ func (svr *Service) RegisterWorkConn(
 		return err
 	}
 	return svr.ctlManager.RegisterWorkConn(ctl, proxy.NewWorkConn(workConn))
+}
+
+// KickClientByRunID force-closes the control session for runID. The client
+// itself will keep reconnecting; refusing re-entry is the caller's business
+// (e.g. revoking the token), not this method's.
+func (svr *Service) KickClientByRunID(runID string) bool {
+	return svr.ctlManager.CloseByRunID(runID)
+}
+
+// controlCryptoKey returns the key for the control-channel and encrypted
+// work-conn layers. Upstream keys both off the shared auth token; with the
+// token gate mounted it must be the login user's own token, since an
+// unmodified frpc derives its key from the token it was configured with.
+func (svr *Service) controlCryptoKey(user string) []byte {
+	if svr.gate != nil {
+		if token, ok := svr.gate.TokenFor(user); ok {
+			return []byte(token)
+		}
+	}
+	return svr.auth.EncryptionKey()
 }
 
 func (svr *Service) RegisterVisitorConn(visitorConn net.Conn, newMsg *msg.NewVisitorConn, wireProtocol string) error {

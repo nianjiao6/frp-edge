@@ -38,21 +38,31 @@ type Controller struct {
 	serverCfg      *v1.ServerConfig
 	clientRegistry *registry.ClientRegistry
 	pxyManager     ProxyManager
+	kicker         ClientKicker
 }
 
 type ProxyManager interface {
 	GetByName(name string) (proxy.Proxy, bool)
 }
 
+// ClientKicker force-closes a client control session by runID. It is
+// implemented by the server Service and injected here to avoid an
+// import cycle (server imports server/http).
+type ClientKicker interface {
+	KickClientByRunID(runID string) bool
+}
+
 func NewController(
 	serverCfg *v1.ServerConfig,
 	clientRegistry *registry.ClientRegistry,
 	pxyManager ProxyManager,
+	kicker ClientKicker,
 ) *Controller {
 	return &Controller{
 		serverCfg:      serverCfg,
 		clientRegistry: clientRegistry,
 		pxyManager:     pxyManager,
+		kicker:         kicker,
 	}
 }
 

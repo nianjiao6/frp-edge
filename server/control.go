@@ -283,6 +283,20 @@ func (cm *ControlManager) GetByID(runID string) (ctl *Control, ok bool) {
 	return ctl, true
 }
 
+// CloseByRunID force-closes the current running control for runID.
+// It reuses GetByID's generation-aware locking; Close() only takes
+// ctl.lifecycleMu, so it is safe to call here without holding manager locks.
+// Subsequent cleanup (closing proxies, metrics CloseClient, manager.Remove)
+// is performed by the control's worker() goroutine.
+func (cm *ControlManager) CloseByRunID(runID string) bool {
+	ctl, ok := cm.GetByID(runID)
+	if !ok {
+		return false
+	}
+	_ = ctl.Close()
+	return true
+}
+
 // admitVisitorByRunID commits a visitor admission against the current running
 // control while its run and lifecycle ownership are held. The callback must
 // only perform the in-memory, buffered visitor admission.

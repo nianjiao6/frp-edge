@@ -15,6 +15,8 @@
 package v1
 
 import (
+	"fmt"
+
 	"github.com/samber/lo"
 
 	"github.com/fatedier/frp/pkg/config/types"
@@ -96,6 +98,41 @@ type ServerConfig struct {
 	AllowPorts []types.PortsRange `json:"allowPorts,omitempty"`
 
 	HTTPPlugins []HTTPPluginOptions `json:"httpPlugins,omitempty"`
+
+	// TokenGate configures the optional per-user token gate. When left unset,
+	// the server authenticates exactly like upstream frps.
+	TokenGate TokenGateConfig `json:"tokenGate,omitempty"`
+}
+
+// TokenGateConfig selects the token gate's token source. Exactly one form is
+// active: a local tokens file (self-contained operation) or a control plane
+// snapshot (platform operation). Both set is a configuration error.
+type TokenGateConfig struct {
+	// TokensFile is a JSON file mapping user to raw token, reloaded every 5s.
+	// Contents are raw tokens: the wire protocol carries only the derived key
+	// md5(token||timestamp), which cannot be reversed into the token.
+	TokensFile string `json:"tokensFile,omitempty"`
+	// ControlPlane is the URL of the control plane snapshot API
+	// (platform-operation form; mutually exclusive with tokensFile).
+	ControlPlane string `json:"controlPlane,omitempty"`
+	// Basic-auth credentials for the control plane snapshot API.
+	ControlPlaneUser     string `json:"controlPlaneUser,omitempty"`
+	ControlPlanePassword string `json:"controlPlanePassword,omitempty"`
+	// SnapshotMaxAge bounds how stale a snapshot may be before new logins
+	// fail closed (heartbeats fail open). Default 5m; 0 disables.
+	SnapshotMaxAge string `json:"snapshotMaxAge,omitempty"`
+	// SnapshotMaxBytes bounds the control-plane snapshot response size.
+	// Default 1 MiB (~16k users at ~64 bytes per entry): larger tables must
+	// raise this, or the snapshot refresh keeps failing and the gate
+	// fail-closes new logins past snapshotMaxAge.
+	SnapshotMaxBytes int `json:"snapshotMaxBytes,omitempty"`
+	// Verify is the URL of an online-verification service called on every
+	// login (push-style auth instead of snapshot pulling). Mutually
+	// exclusive with tokensFile and controlPlane.
+	Verify string `json:"verify,omitempty"`
+	// Basic-auth credentials for the verification service.
+	VerifyUser     string `json:"verifyUser,omitempty"`
+	VerifyPassword string `json:"verifyPassword,omitempty"`
 }
 
 func (c *ServerConfig) Complete() error {
@@ -106,6 +143,15 @@ func (c *ServerConfig) Complete() error {
 	c.Transport.Complete()
 	c.WebServer.Complete()
 	c.SSHTunnelGateway.Complete()
+	set := 0
+	for _, v := range []string{c.TokenGate.TokensFile, c.TokenGate.ControlPlane, c.TokenGate.Verify} {
+		if v != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		return fmt.Errorf("[tokenGate] tokensFile, controlPlane and verify are mutually exclusive")
+	}
 
 	c.BindAddr = util.EmptyOr(c.BindAddr, "0.0.0.0")
 	c.BindPort = util.EmptyOr(c.BindPort, 7000)

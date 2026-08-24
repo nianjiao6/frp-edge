@@ -25,7 +25,7 @@ POST /api/v2/users/{user}/kick     # 踢掉该 user 名下全部在线实例(封
 POST /api/v2/clients/{key}/kick    # 踢单个实例,key 来自 GET /api/v2/clients
 ```
 
-- 响应:`{"kicked": ["<runID>", ...]}`;**空数组也返回 200**(幂等,封禁轮询可放心重复调用);单点踢不存在的 key 返回 404
+- 响应:v2 信封 `{"code": 200, "data": {"kicked": ["<runID>", ...]}}`(见 INTERFACE.md §3.1);**空数组也返回 200**(幂等,封禁轮询可放心重复调用);单点踢不存在的 key 返回 404
 - 效果:控制连接断开、代理监听器关闭(**新**访客连接立即失败)、registry 标记 offline
 - 边界(源码+实测):已建立的在途访客连接不被主动切断,自然结束;踢后 frpc 会自动重连,**「不许回来」由删 token(P2)承担**,两者配合才构成封禁
 

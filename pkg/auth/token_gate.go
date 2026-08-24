@@ -22,9 +22,10 @@ import (
 	"github.com/fatedier/frp/pkg/msg"
 )
 
-// errAuthFailed is the single error for every TokenGate rejection: unknown
-// user, wrong token and stale timestamp are indistinguishable to callers, so
-// the wire leaks no user-enumeration signal.
+// errAuthFailed is the single error for every gate rejection - the token
+// gate and the verify-gate session re-checks alike: unknown user, wrong
+// token and stale timestamp are indistinguishable to callers, so the wire
+// leaks no user-enumeration signal.
 var errAuthFailed = errors.New("authentication failed")
 
 // TokenGate generalizes the built-in token verifier to per-user tokens: same

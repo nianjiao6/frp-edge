@@ -186,7 +186,7 @@ func (s *sessionVerifyGate) VerifyPing(m *msg.Ping) error {
 		return nil
 	}
 	if !s.localMatch(m.PrivilegeKey, m.Timestamp) {
-		return errors.New("authentication failed")
+		return errAuthFailed
 	}
 	return nil
 }
@@ -196,7 +196,7 @@ func (s *sessionVerifyGate) VerifyNewWorkConn(m *msg.NewWorkConn) error {
 		return nil
 	}
 	if !s.localMatch(m.PrivilegeKey, m.Timestamp) {
-		return errors.New("authentication failed")
+		return errAuthFailed
 	}
 	return nil
 }

@@ -1,8 +1,8 @@
 # frp-edge
 
-> **frp-edge** 是 [fatedier/frp](https://github.com/fatedier/frp) 的 fork,基线锁定 **v0.71.0**,为 mtunnel 内网穿透服务维护。
-> 变更集小而收敛(P1/P2 追加式,P5 仅改 frpc 侧默认值):不配置 `[tokenGate]` 段时,frps 行为与上游完全一致(上游测试套件全绿)。
-> 上游 README 原文见下方分隔线之后。许可证延续 Apache-2.0,保留上游版权声明。
+> **frp-edge** 是 [fatedier/frp](https://github.com/fatedier/frp) 的 fork,基线锁定 **v0.71.0**,为 mtunnel 内网穿透服务平台维护(mtunnel 本体仓库暂未公开;第三方集成不依赖它,对外契约见 [docs/INTERFACE.md](docs/INTERFACE.md))。
+> 变更集追加且边界收敛(P1/P2 增量挂载,P5 仅改 frpc 侧默认值):不配置 `[tokenGate]` 段时,frps 行为与上游完全一致(上游测试套件全绿)。
+> 上游 README(略去 Sponsors 与发版徽章段)见下方分隔线之后。许可证延续 Apache-2.0,保留上游版权声明。
 
 ## 对外接口规范
 
@@ -13,7 +13,7 @@
 | # | 补丁 | 内容 | 规模 | 激活条件 |
 |---|------|------|------|----------|
 | P1 | Kick API | 管理端强制客户端下线 | ~60 行 | 路由常驻(受 webServer Basic Auth 保护,只应绑内网) |
-| P2 | TokenGate | per-user token 认证,取代全局共享 token | ~300 行 | frps 配置 `[tokenGate]` 段 |
+| P2 | TokenGate | per-user token 认证,取代全局共享 token;凭证来源三选一:`tokensFile` 静态文件 / `controlPlane` 快照拉取 / `verify` 在线验证(推荐,见 INTERFACE.md §2) | ~800 行(不含测试) | frps 配置 `[tokenGate]` 段 |
 | P5 | 心跳默认值 | tcpmux 下 frpc 应用层心跳默认恢复 30s/90s(上游默认禁用) | ~10 行 | 默认生效(仅 client 侧;显式配置仍优先) |
 
 ### P1:强制下线 API
@@ -129,46 +129,7 @@ curl -u admin:*** -X POST http://127.0.0.1:7500/api/v2/users/alice/kick
 
 # frp
 
-[![Build Status](https://circleci.com/gh/fatedier/frp.svg?style=shield)](https://circleci.com/gh/fatedier/frp)
-[![GitHub release](https://img.shields.io/github/tag/fatedier/frp.svg?label=release)](https://github.com/fatedier/frp/releases)
-[![GitHub Releases Stats](https://img.shields.io/github/downloads/fatedier/frp/total.svg?logo=github)](https://somsubhra.github.io/github-release-stats/?username=fatedier&repository=frp)
-
-[README](README.md) | [中文文档](README_zh.md)
-
-## Sponsors
-
-frp is an open source project with its ongoing development made possible entirely by the support of our awesome sponsors. If you'd like to join them, please consider [sponsoring frp's development](https://github.com/sponsors/fatedier).
-
-<h3 align="center">Gold Sponsors</h3>
-<!--gold sponsors start-->
-<p align="center">
-  <a href="https://github.com/beclab/Olares" target="_blank">
-    <img width="420px" src="https://raw.githubusercontent.com/fatedier/frp/dev/doc/pic/sponsor_olares.jpeg">
-	<br>
-	<b>The sovereign cloud that puts you in control</b>
-	<br>
-	<sub>An open source, self-hosted alternative to public clouds, built for data ownership and privacy</sub>
-  </a>
-</p>
-
-<div align="center">
-
-## Recall.ai - API for meeting recordings
-
-If you're looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=fatedier-frp),
-
-an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
-
-</div>
-
-<p align="center">
-  <a href="https://jb.gg/frp" target="_blank">
-    <img width="420px" src="https://raw.githubusercontent.com/fatedier/frp/dev/doc/pic/sponsor_jetbrains.jpg">
-	<br>
-	<b>The complete IDE crafted for professional Go developers</b>
-  </a>
-</p>
-<!--gold sponsors end-->
+> 以下为上游 README 原文(自 v0.71.0 基线),供查阅 frp 完整功能文档;Sponsors 与发版徽章段落与本 fork 无关,已略去。
 
 ## What is frp?
 
@@ -240,9 +201,6 @@ frp also offers a P2P connect mode.
     * [Feature Lifecycle](#feature-lifecycle)
 * [Related Projects](#related-projects)
 * [Contributing](#contributing)
-* [Donation](#donation)
-    * [GitHub Sponsors](#github-sponsors)
-    * [PayPal](#paypal)
 
 <!-- vim-markdown-toc -->
 
@@ -1487,17 +1445,3 @@ Interested in getting involved? We would like to help you!
 * If you have great ideas, send an email to fatedier@gmail.com.
 
 **Note: We prefer you to give your advise in [issues](https://github.com/fatedier/frp/issues), so others with a same question can search it quickly and we don't need to answer them repeatedly.**
-
-## Donation
-
-If frp helps you a lot, you can support us by:
-
-### GitHub Sponsors
-
-Support us by [Github Sponsors](https://github.com/sponsors/fatedier).
-
-You can have your company's logo placed on README file of this project.
-
-### PayPal
-
-Donate money by [PayPal](https://www.paypal.me/fatedier) to my account **fatedier@gmail.com**.

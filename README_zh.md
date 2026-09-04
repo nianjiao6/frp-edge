@@ -1,54 +1,23 @@
+# frp-edge
+
+> **frp-edge** 是 [fatedier/frp](https://github.com/fatedier/frp) 的 fork,基线锁定 **v0.71.0**,为 mtunnel 内网穿透服务平台维护(mtunnel 本体仓库暂未公开;第三方集成不依赖它,对外契约见 [docs/INTERFACE.md](docs/INTERFACE.md))。
+> 补丁集说明(P1 Kick API / P2 TokenGate / P5 心跳默认值)、frps/frpc 配置示例、封禁时序与部署注意事项见 **[README.md](README.md)**(头部同为中文)。
+> 上游中文 README(略去 Sponsors 与徽章段)见下方分隔线之后。许可证延续 Apache-2.0,保留上游版权声明。
+
+---
+
 # frp
 
-[![Build Status](https://circleci.com/gh/fatedier/frp.svg?style=shield)](https://circleci.com/gh/fatedier/frp)
-[![GitHub release](https://img.shields.io/github/tag/fatedier/frp.svg?label=release)](https://github.com/fatedier/frp/releases)
-[![GitHub Releases Stats](https://img.shields.io/github/downloads/fatedier/frp/total.svg?logo=github)](https://somsubhra.github.io/github-release-stats/?username=fatedier&repository=frp)
-
-[README](README.md) | [中文文档](README_zh.md)
+> 以下为上游 README 原文(自 v0.71.0 基线),供查阅 frp 完整功能文档;Sponsors 与发版徽章段落与本 fork 无关,已略去。
 
 frp 是一个专注于内网穿透的高性能的反向代理应用，支持 TCP、UDP、HTTP、HTTPS 等多种协议，且支持 P2P 通信。可以将内网服务以安全、便捷的方式通过具有公网 IP 节点的中转暴露到公网。
-
-## Sponsors
-
-frp 是一个完全开源的项目，我们的开发工作完全依靠赞助者们的支持。如果你愿意加入他们的行列，请考虑 [赞助 frp 的开发](https://github.com/sponsors/fatedier)。
-
-<h3 align="center">Gold Sponsors</h3>
-<!--gold sponsors start-->
-<p align="center">
-  <a href="https://github.com/beclab/Olares" target="_blank">
-    <img width="420px" src="https://raw.githubusercontent.com/fatedier/frp/dev/doc/pic/sponsor_olares.jpeg">
-	<br>
-	<b>The sovereign cloud that puts you in control</b>
-	<br>
-	<sub>An open source, self-hosted alternative to public clouds, built for data ownership and privacy</sub>
-  </a>
-</p>
-
-<div align="center">
-
-## Recall.ai - API for meeting recordings
-
-If you're looking for a meeting recording API, consider checking out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sponsorship&utm_campaign=fatedier-frp),
-
-an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
-
-</div>
-
-<p align="center">
-  <a href="https://jb.gg/frp" target="_blank">
-    <img width="420px" src="https://raw.githubusercontent.com/fatedier/frp/dev/doc/pic/sponsor_jetbrains.jpg">
-	<br>
-	<b>The complete IDE crafted for professional Go developers</b>
-  </a>
-</p>
-<!--gold sponsors end-->
 
 ## 为什么使用 frp ？
 
 通过在具有公网 IP 的节点上部署 frp 服务端，可以轻松地将内网服务穿透到公网，同时提供诸多专业的功能特性，这包括：
 
 * 客户端服务端通信支持 TCP、QUIC、KCP 以及 Websocket 等多种协议。
-* 采用 TCP 连接流式复用，在单个连接间承载更多请求，节省连接建立时间，降低请求延迟。
+* 采用 TCP 连接流式复用，在单个连接间承载更多请求，节省连接建立时间，降低连接延迟。
 * 代理组间的负载均衡。
 * 端口复用，多个服务通过同一个服务端端口暴露。
 * 支持 P2P 通信，流量不经过服务器中转，充分利用带宽资源。
@@ -93,23 +62,9 @@ frp 是一个免费且开源的项目，我们欢迎任何人为其开发和进�
 * 贡献代码请提交 PR 至 dev 分支，master 分支仅用于发布稳定可用版本。
 * 如果你有任何其他方面的问题或合作，欢迎发送邮件至 fatedier@gmail.com 。
 
-**提醒：和项目相关的问题请在 [issues](https://github.com/fatedier/frp/issues) 中反馈，这样方便其他有类似问题的人可以快速查找解决方法，并且也避免了我们重复回答一些问题。**
+**提醒：和项目相关的问题请在 [issues](https://github.com/fatedier/frp/issues) 中反馈，这样方便其他有类似问题的人可以快速查找解决方法，同时也避免了我们重复回答一些问题。**
 
 ## 关联项目
 
 * [gofrp/plugin](https://github.com/gofrp/plugin) - frp 插件仓库，收录了基于 frp 扩展机制实现的各种插件，满足各种场景下的定制化需求。
 * [gofrp/tiny-frpc](https://github.com/gofrp/tiny-frpc) - 基于 ssh 协议实现的 frp 客户端的精简版本(最低约 3.5MB 左右)，支持常用的部分功能，适用于资源有限的设备。
-
-## 赞助
-
-如果您觉得 frp 对你有帮助，欢迎给予我们一定的捐助来维持项目的长期发展。
-
-### Sponsors
-
-长期赞助可以帮助我们保持项目的持续发展。
-
-您可以通过 [GitHub Sponsors](https://github.com/sponsors/fatedier) 赞助我们。
-
-国内用户可以通过 [爱发电](https://afdian.com/a/fatedier) 赞助我们。
-
-企业赞助者可以将贵公司的 Logo 以及链接放置在项目 README 文件中。

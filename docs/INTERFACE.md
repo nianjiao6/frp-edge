@@ -73,7 +73,7 @@ Authorization: Basic {controlPlaneUser}:{controlPlanePassword}
 
 ### 2.2 在线验证(verify 形态,推荐)
 
-**凭证模型(2026-08-19 码直登;2026-08-27 mtunnel 平台 v4.3 起登录身份换为会话子密钥)**。`Login.user` 对 frps 始终是一个不透明身份串(`xun-` + base64url,≈47 字符——码与子密钥同形):frpc 配置 `user = <该串>`、`auth.token = <该串>`,**原文透传**——frps 不做任何翻译,验证方按该字段查表即可。mtunnel 平台下该串为激活链发放的会话子密钥(持授权码不即登录:`tunnel_set_word` 激活时换取);独立部署可自定为任意用户凭证。
+**凭证模型(2026-08-19 码直登;2026-08-27 mtunnel 平台 v4.3 起登录身份换为会话子密钥)**。`Login.user` 对 frps 始终是一个不透明身份串(子密钥 `mtk-` + base64url,≈47 字符;授权码同形但前缀为 `mt-`,不进登录链):frpc 配置 `user = <该串>`、`auth.token = <该串>`,**原文透传**——frps 不做任何翻译,验证方按该字段查表即可。mtunnel 平台下该串为激活链发放的会话子密钥(持授权码不即登录:`tunnel_set_word` 激活时换取);独立部署可自定为任意用户凭证。
 
 frps 在**每次登录**时调用:
 
@@ -83,7 +83,7 @@ Authorization: Basic {verifyUser}:{verifyPassword}
 Content-Type: application/json
 
 {
-  "user":          "xun-<会话子密钥>",   // 登录身份串原文透传(mtunnel v4.3 = 会话子密钥)
+  "user":          "mtk-<会话子密钥>",   // 登录身份串原文透传(mtunnel v4.3 = 会话子密钥)
   "privilegeKey":  "<md5(身份串‖ts)>", // frpc 自动生成的派生键;验证方可选校验或忽略
   "timestamp":     1755…,          // Unix 秒
   "kind":          "login"         // login | ping | newworkconn(当前仅 login 远程回调)
@@ -94,7 +94,7 @@ Content-Type: application/json
   "allow":   true,                  // 判决
   "reason":  "",                    // 拒绝原因码(见下),allow=true 时省略
   "message": "",                    // 人类可读说明,frps 原样透传给客户端
-  "token":   "xun-<会话子密钥>"       // 仅 allow=true 时必填(§1.2 通道加密需要;即回显 user 原串)
+  "token":   "mtk-<会话子密钥>"       // 仅 allow=true 时必填(§1.2 通道加密需要;即回显 user 原串)
 }
 ```
 

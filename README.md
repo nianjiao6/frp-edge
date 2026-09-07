@@ -72,8 +72,8 @@ echo "{\"alice\": \"$TOKEN\"}" > /etc/frps/users.json && chmod 600 /etc/frps/use
 ```toml
 serverAddr = "edge.example.com"
 serverPort = 7000
-user = "xun-<会话子密钥>"    # 登录身份串原文携带(真透传);mtunnel 平台 v4.3 起为激活发放的会话子密钥
-auth.token = "xun-<会话子密钥>"  # 与 user 同值:frpc 用它派生心跳键,frps 侧复检自洽
+user = "mtk-<会话子密钥>"    # 登录身份串原文携带(真透传);mtunnel 平台 v4.3 起为激活发放的会话子密钥
+auth.token = "mtk-<会话子密钥>"  # 与 user 同值:frpc 用它派生心跳键,frps 侧复检自洽
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]    # 命门①,双侧必须
 transport.heartbeatInterval = 30                          # P5 后默认即 30,显式双保险
 ```

@@ -13,18 +13,18 @@ func newVerifyGate(url string) *VerifyGate {
 	return NewVerifyGate(url, "", "", nil)
 }
 
-func verifyLoginMsg() *msg.Login { return &msg.Login{User: "xun-code", Timestamp: 1} }
+func verifyLoginMsg() *msg.Login { return &msg.Login{User: "mtk-code", Timestamp: 1} }
 
 func TestVerifyGateAllowLearnsToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"allow":true,"token":"xun-code"}`))
+		_, _ = w.Write([]byte(`{"allow":true,"token":"mtk-code"}`))
 	}))
 	defer srv.Close()
 	g := newVerifyGate(srv.URL)
 	if err := g.VerifyLogin(verifyLoginMsg()); err != nil {
 		t.Fatalf("allow must pass: %v", err)
 	}
-	if tok, ok := g.TokenFor("xun-code"); !ok || tok != "xun-code" {
+	if tok, ok := g.TokenFor("mtk-code"); !ok || tok != "mtk-code" {
 		t.Fatalf("token not learned: %q ok=%v", tok, ok)
 	}
 }
@@ -80,7 +80,7 @@ func TestVerifyGateRejectsAllowWithoutToken(t *testing.T) {
 	if err := g.VerifyLogin(verifyLoginMsg()); err == nil {
 		t.Fatal("allow without the raw token must fail, not learn an empty token")
 	}
-	if tok, ok := g.TokenFor("xun-code"); ok || tok != "" {
+	if tok, ok := g.TokenFor("mtk-code"); ok || tok != "" {
 		t.Fatalf("no token may be learned, got %q ok=%v", tok, ok)
 	}
 }

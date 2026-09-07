@@ -80,7 +80,7 @@ transport.heartbeatInterval = 30                          # P5 后默认即 30,�
 
 凭证书写请看 [docs/INTERFACE.md](docs/INTERFACE.md) §2.2:验证方按 `user` 字段(mtunnel v4.3 = 会话子密钥)查表判决,`allow` 时回显该串。真透传的安全边界(建议生产 `tls.force` + `trustedCaFile` pinning)同文档。
 
-**判决语义:**
+**判决语义(tokensFile / controlPlane 查表形态):**
 
 | 客户端状态 | 新登录 | 已在线会话 |
 |-----------|--------|-----------|
@@ -90,7 +90,7 @@ transport.heartbeatInterval = 30                          # P5 后默认即 30,�
 | 重放旧 (PrivilegeKey, 时间戳) | ❌(±15min 时效) | ❌ |
 | tokensFile 写坏 | — | 照常运行(保留最后快照 + 警告日志) |
 
-所有拒绝统一返回 `authentication failed`,不泄露用户枚举信息。
+查表形态的所有拒绝统一返回 `authentication failed`,不泄露用户枚举信息。**verify 形态有两点不同**(详见 INTERFACE.md §2):① 心跳/工作连接用登录时缓存的 token **本地复检**(不回调,删用户不影响下一次心跳)——存量下线走 Kick,重连被新判决拒绝;② 登录拒绝按验证方的结构化 reason/message 透传给客户端,不是统一的 `authentication failed`。
 
 ### 封禁完整序列(实测时序契约)
 

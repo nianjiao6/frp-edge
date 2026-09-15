@@ -33,6 +33,20 @@
 - Mock servers in `/test/e2e/mock/`
 - Run: `make e2e` or `make alltest`
 
+## Docs
+
+- `docs/INTERFACE.md` - the `[tokenGate]` integration contract (for third-party frps operators)
+- System-level design/architecture/contract docs live in the mtunnel-ctrl repo (`docs/`); this repo is the public open-source fork and carries no internal specs
+
+## Git Conventions
+
+- `<type>: <subject>` - conventional types (feat / fix / docs / test / chore); English subjects
+- One commit = one theme; no Co-Authored-By trailer
+- History here is PUBLIC (an open-source fork): never commit internal
+  specs, credentials or business-private documents; squashing requires
+  a force push - only with the user's explicit word, and never over
+  commits someone else may have fetched
+
 ## Agent Runbooks
 
 Operational procedures for agents are in `doc/agents/`:

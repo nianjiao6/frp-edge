@@ -67,18 +67,18 @@ echo "{\"alice\": \"$TOKEN\"}" > /etc/frps/users.json && chmod 600 /etc/frps/use
 
 > 为什么存原文不存哈希:线上跑的只有派生键 md5(token‖ts),无法从哈希反推;服务端必须持有原文才能重算比对。防线 = 0600 + 内网位置。
 
-**frpc 配置(上游原版二进制,零改动;登录身份 = 一个不透明串,mtunnel 平台 2026-08-27 v4.3 起为激活发放的会话子密钥,与授权码同形):**
+**frpc 配置(上游原版二进制,零改动;登录身份 = 一个不透明串——mtunnel 平台签发的 per-user 凭证,frps 不解释其内部结构):**
 
 ```toml
 serverAddr = "edge.example.com"
 serverPort = 7000
-user = "mtk-<会话子密钥>"    # 登录身份串原文携带(真透传);mtunnel 平台 v4.3 起为激活发放的会话子密钥
-auth.token = "mtk-<会话子密钥>"  # 与 user 同值:frpc 用它派生心跳键,frps 侧复检自洽
+user = "mtk-<子密钥>"    # 登录身份串原文携带(真透传);平台侧按此串查表判决
+auth.token = "mtk-<子密钥>"  # 与 user 同值:frpc 用它派生心跳键,frps 侧复检自洽
 auth.additionalScopes = ["HeartBeats", "NewWorkConns"]    # 命门①,双侧必须
 transport.heartbeatInterval = 30                          # P5 后默认即 30,显式双保险
 ```
 
-凭证书写请看 [docs/INTERFACE.md](docs/INTERFACE.md) §2.2:验证方按 `user` 字段(mtunnel v4.3 = 会话子密钥)查表判决,`allow` 时回显该串。真透传的安全边界(建议生产 `tls.force` + `trustedCaFile` pinning)同文档。
+凭证书写请看 [docs/INTERFACE.md](docs/INTERFACE.md) §2.2:验证方按 `user` 字段查表判决,`allow` 时回显该串。真透传的安全边界(建议生产 `tls.force` + `trustedCaFile` pinning)同文档。
 
 **判决语义(tokensFile / controlPlane 查表形态):**
 
